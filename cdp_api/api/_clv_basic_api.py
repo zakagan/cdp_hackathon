@@ -119,7 +119,7 @@ def check_s3():
     else:
         return make_response(jsonify('Query execution failed: %s' % response), 500, {'Content-Type': JSON_MIME_TYPE})
 
-@app.route('/account_clv/<company_id>')
+@app.route('/account_clv/<company_id>', methods=['GET'])
 def account_clv_lookup(company_id):
     client = bigquery.Client()
     content = request.json
@@ -134,6 +134,23 @@ def account_clv_lookup(company_id):
 
     return_dict = {"data": {"result_lifetime_rev": return_clv}}
     return make_response(jsonify(return_dict), 200, {'Content-Type': JSON_MIME_TYPE})
+
+@app.route('/company_id_map/', methods=['GET'])
+def company_id_lookup():
+    client = bigquery.Client()
+    content = request.json
+
+    query_job = client.query("""SELECT company_name, company_sfdc_id FROM `djsyndicationhub-stag.PIB_CLV.all_accounts_clv`""")
+
+    results = query_job.result()  # Waits for job to complete.
+
+    company_sfdc_id ={}
+    for i in results:
+        company_sfdc_id.update({i.get("company_name") : i.get("company_sfdc_id")})
+
+    return_dict = {"data": {"company_id_map": company_sfdc_id}}
+    return make_response(jsonify(return_dict), 200, {'Content-Type': JSON_MIME_TYPE})
+
 
 
 @app.errorhandler(404)
