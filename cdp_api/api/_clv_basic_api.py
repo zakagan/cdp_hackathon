@@ -3,8 +3,10 @@ import time
 import boto3
 from google.cloud import bigquery
 from flask import Flask, Response, make_response, jsonify, request, abort
+from flask_cors import CORS
 
 app = Flask(__name__)
+CORS(app)
 
 JSON_MIME_TYPE = 'application/json'
 
