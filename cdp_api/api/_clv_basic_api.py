@@ -121,6 +121,17 @@ def check_s3():
     else:
         return make_response(jsonify('Query execution failed: %s' % response), 500, {'Content-Type': JSON_MIME_TYPE})
 
+@app.route('/', methods=['GET'])
+def api_usage():
+    usage_dict = {"data" :
+                    {"usage": 
+                        {"/account_clv/<company_id>": "provide company id to recieve associated CLV data",
+                        "/company_id_map/" : "lists companies in the database and their company ids for lookup "}
+                    }
+        }
+
+    return make_response(jsonify(usage_dict), 200, {'Content-Type': JSON_MIME_TYPE})
+
 @app.route('/account_clv/<company_id>', methods=['GET'])
 def account_clv_lookup(company_id):
     client = bigquery.Client()
