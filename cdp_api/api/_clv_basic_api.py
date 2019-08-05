@@ -1,6 +1,7 @@
 import json
 import time
 import boto3
+import os
 from google.cloud import bigquery
 from flask import Flask, Response, make_response, jsonify, request, abort
 from flask_cors import CORS
@@ -9,6 +10,7 @@ app = Flask(__name__)
 CORS(app)
 
 JSON_MIME_TYPE = 'application/json'
+DB_ENV = os.environ['DB_ENV']
 
 
 @app.route('/checks3')
@@ -20,91 +22,11 @@ def check_s3():
 
     # Make the Athena call
     athena = boto3.client('athena')
-    response = athena.start_query_execution(
-    QueryString = """ SELECT bad.cibs_billing_account_id,
-         bad.industry,
-         base_iii.*
-        FROM 
-        (SELECT comp.company_name,
-         base_ii.*
-        FROM 
-            (SELECT ahf.company_sfdc_id,
-         base.*
-            FROM 
-                (SELECT opp.opportunity_name,
-         opp.sale_type,
-         opp.sales_stage,
-         opp.created_date,
-         opp.closed_date,
-         opp.opportunity_effective_date,
-         opp.compelling_reasons_to_buy,
-         opp.loss_reason_code,
-         opp.opportunity_country,
-         opp.fiscal_year,
-         opp.fiscal_quarter,
-         opp.pib_opportunity_sfdc_id,
-         opp.billing_account,
-         psd.forecast_month,
-         psd.product_line,
-         psd.product_service,
-         psd.product_category,
-         psd.net_recurring_amount,
-         psd.net_one_time_amount,
-         psd.currency_iso_code
-                FROM 
-                    (SELECT opportunity_name,
-         billing_account,
-         sale_type,
-         sales_stage,
-         annualized_opportunity_revenue,
-         created_date,
-         closed_date,
-         opportunity_effective_date,
-         compelling_reasons_to_buy,
-         loss_reason_code,
-         opportunity_country,
-         fiscal_year,
-         fiscal_quarter,
-         pib_opportunity_sfdc_id
-                    FROM hackathon.pib_opportunity_dimension
-                    WHERE status_flag <> 'DELETE'
-                    GROUP BY  opportunity_name, billing_account, sale_type, sales_stage, annualized_opportunity_revenue, created_date, closed_date, opportunity_effective_date, compelling_reasons_to_buy, loss_reason_code, opportunity_country, fiscal_year, fiscal_quarter, pib_opportunity_sfdc_id ) opp
-                    LEFT JOIN 
-                        (SELECT forecast_month,
-         product_line,
-         product_service,
-         product_category,
-         net_recurring_amount,
-         net_one_time_amount,
-         currency_iso_code, opportunity
-                        FROM hackathon.pib_product_services_dimension
-                        WHERE status_flag <> 'DELETE'
-                        GROUP BY  forecast_month, product_line, product_service, product_category, net_recurring_amount, net_one_time_amount, currency_iso_code, opportunity) psd
-                            ON psd.opportunity = opp.pib_opportunity_sfdc_id) base
-                        LEFT JOIN 
-                            (SELECT *
-                            FROM hackathon.pib_account_hierarchy_fact) ahf
-                                ON base.pib_opportunity_sfdc_id = ahf.pib_opportunity_sfdc_id) base_ii
-                            LEFT JOIN 
-                                (SELECT company_sfdc_id,
-         company_name
-                                FROM hackathon.pib_company_dimension
-                                WHERE status_flag <> 'DELETE'
-                                GROUP BY  company_sfdc_id, company_name) comp
-                                    ON comp.company_sfdc_id = base_ii.company_sfdc_id) base_iii
-                                LEFT JOIN 
-                                    (SELECT cibs_billing_account_id,
-         industry,
-         contract_id,
-         salesforce_billing_account_id
-                                    FROM hackathon.pib_billing_account_dimension
-                                    GROUP BY  cibs_billing_account_id, industry, contract_id, salesforce_billing_account_id) bad
-                                        ON bad.salesforce_billing_account_id = base_iii.billing_account
-                                    WHERE sales_stage IN ('Closed (Win/Loss)','Won - 100%','Lost Revenue - 100%')
-    GROUP BY bad.cibs_billing_account_id,
-         bad.industry, base_iii.company_name, base_iii.company_sfdc_id, base_iii.opportunity_name, base_iii.sale_type, base_iii.sales_stage, base_iii.created_date, base_iii.closed_date, base_iii.opportunity_effective_date, base_iii.compelling_reasons_to_buy, base_iii.loss_reason_code, base_iii.opportunity_country, base_iii.fiscal_year, base_iii.fiscal_quarter, base_iii.pib_opportunity_sfdc_id, base_iii.billing_account, base_iii.forecast_month, base_iii.product_line, base_iii.product_service, base_iii.product_category, base_iii.net_recurring_amount, base_iii.net_one_time_amount, base_iii.currency_iso_code""",
-        ResultConfiguration={'OutputLocation': s3_output_location}
-    )
+    with open('sql_query.txt', 'r') as queryfile:
+        sql_query = queryfile.read()
+    response = athena.start_query_execution(sql_query, ResultConfiguration={'OutputLocation': s3_output_location})
+
+    QueryString = 
 
     # Wait for the query to complete
     response = athena.get_query_execution(QueryExecutionId = response['QueryExecutionId'])['QueryExecution']
@@ -137,7 +59,7 @@ def account_clv_lookup(company_id):
     client = bigquery.Client()
     content = request.json
 
-    query_job = client.query("""SELECT ps_total_lifetime_rev FROM `djsyndicationhub-stag.PIB_CLV.all_accounts_clv` where company_sfdc_id = \"{}\"""".format(company_id))
+    query_job = client.query("""SELECT ps_total_lifetime_rev FROM `{}.PIB_CLV.all_accounts_clv` where company_sfdc_id = \"{}\"""".format(DB_ENV, company_id))
 
     results = query_job.result()  # Waits for job to complete.
 
@@ -153,7 +75,7 @@ def company_id_lookup():
     client = bigquery.Client()
     content = request.json
 
-    query_job = client.query("""SELECT company_name, company_sfdc_id FROM `djsyndicationhub-stag.PIB_CLV.all_accounts_clv`""")
+    query_job = client.query("""SELECT company_name, company_sfdc_id FROM `{}.PIB_CLV.all_accounts_clv`""".format(DB_ENV))
 
     results = query_job.result()  # Waits for job to complete.
 
